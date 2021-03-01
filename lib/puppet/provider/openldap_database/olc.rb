@@ -196,6 +196,15 @@ Puppet::Type.
     t << "cn: admin\n"
     t << "description: LDAP administrator\n"
     t << "userPassword: #{resource[:rootpw]}\n" if resource[:rootpw]
+    if resource[:syncpw]
+      t << "\n"
+      t << "dn: cn=reader,#{resource[:suffix]}\n"
+      t << "objectClass: simpleSecurityObject\n" if resource[:syncpw]
+      t << "objectClass: organizationalRole\n"
+      t << "cn: reader\n"
+      t << "description: LDAP reader\n"
+      t << "userPassword: #{resource[:syncpw]}" if resource[:syncpw]
+    end
     t.close
     Puppet.debug(IO.read t.path)
     begin
@@ -308,6 +317,10 @@ Puppet::Type.
 
   def rootpw=(value)
     @property_flush[:rootpw] = value
+  end
+
+  def syncpw=(value)
+    @property_flush[:syncpw] = value
   end
 
   def suffix=(value)

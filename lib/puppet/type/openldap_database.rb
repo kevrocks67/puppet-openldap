@@ -134,6 +134,73 @@ Puppet::Type.newtype(:openldap_database) do
     end
   end
 
+  newproperty(:syncpw) do
+    desc "Password (or hash of the password) for the sync user"
+
+    def insync?(is)
+      if should =~ /^\{(CRYPT|MD5|SMD5|SSHA|SHA(256|384|512)?)\}.+/
+        should == is
+      else
+        case is
+        when /^\{CRYPT\}.+/
+          "{CRYPT}" + should.crypt(is[0,2]) == is
+        when /^\{MD5\}.+/
+          "{MD5}" + Digest::MD5.hexdigest(should) == is
+        when /^\{SMD5\}.+/
+          salt = is[16..-1]
+          md5_hash_with_salt = "#{Digest::MD5.digest(should + salt)}#{salt}"
+          "{SMD5}#{[md5_hash_with_salt].pack('m').gsub("\n", '')}" == is
+        when /^\{SSHA\}.+/
+          decoded = Base64.decode64(is.gsub(/^\{SSHA\}/, ''))
+          salt = decoded[20..-1]
+          "{SSHA}" + Base64.encode64("#{Digest::SHA1.digest("#{should}#{salt}")}#{salt}").chomp == is
+        when /^\{SHA\}.+/
+          "{SHA}" + Digest::SHA1.hexdigest(should) == is
+        when /^\{(SHA(256|384|512))\}/
+          matches = is.match("^\{(SHA[\\d]{,3})\}")
+          raise ArgumentError, "Invalid password format: #{is}" if matches.nil?
+          crypto = matches[1]
+          case crypto
+          when 'SHA256'
+            '{SHA256}' + Digest::SHA256.hexdigest(should) == is
+          when 'SHA384'
+            '{SHA384}' + Digest::SHA384.hexdigest(should) == is
+          when 'SHA512'
+            '{SHA512}' + Digest::SHA512.hexdigest(should) == is
+          end
+        else
+          false
+        end
+      end
+    end
+
+    def sync
+      require 'securerandom'
+      salt = SecureRandom.random_bytes(4)
+      if should =~ /^\{(CRYPT|MD5|SMD5|SSHA|SHA(256|384|512)?)\}.+/
+        @resource[:syncpw] = should
+      else
+        @resource[:syncpw] = "{SSHA}" + Base64.encode64("#{Digest::SHA1.digest("#{should}#{salt}")}#{salt}").chomp
+      end
+      super
+    end
+
+    def change_to_s(currentvalue, newvalue)
+      if currentvalue == :absent
+        return "created password"
+      else
+        return "changed password"
+      end
+    end
+
+    def is_to_s( currentvalue )
+      return '[old password hash redacted]'
+    end
+    def should_to_s( newvalue )
+      return '[new password hash redacted]'
+    end
+  end
+
   newparam(:initdb, :boolean => true) do
     desc "When true it initiales the database with the top object. When false, it does not create any object in the database, so you have to create it by other mechanism. It defaults to true"
 
